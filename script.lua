@@ -1,120 +1,127 @@
-lua
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+--[[
+    ENGINEERED BY CODESTER
+    TARGET: STEAL AN EGG
+    PLATFORM: DELTA EXECUTOR (MOBILE/PC)
+    FEATURES: AUTO-DETECTION, INSTANT-COLLECT, ANTI-KICK
+]]
 
-local Window = Rayfield:CreateWindow({
-   Name = "Steal an Egg | Auto Farm",
-   LoadingTitle = "Delta Script Hub",
-   LoadingSubtitle = "by Expert AI",
-   ConfigurationSaving = {
-      Enabled = true,
-      FolderName = "EggFarmConfig",
-      FileName = "StealAnEgg"
-   }
-})
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+local Window = OrionLib:MakeWindow({Name = "Codester Elite | Steal an Egg", HidePremium = false, SaveConfig = false})
 
--- Variables
-_G.AutoFarm = false
-local Player = game.Players.LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
+-- Configuration States
+getgenv().AutoFarm = false
+getgenv().FarmSpeed = 0.5
+getgenv().TPDistance = 3 -- Height above the egg
 
--- Function to get the nearest egg
-local function getNearestEgg()
-    local target = nil
-    local dist = math.huge
+-- Technical Logic: Targeted Acquisition
+local function findTargetEgg()
+    local nearest = nil
+    local lastDist = math.huge
     
-    -- Common locations for eggs in this game
-    local eggFolder = workspace:FindFirstChild("Eggs") or workspace:FindFirstChild("DroppedEggs") or workspace
-    
-    for _, v in pairs(eggFolder:GetDescendants()) do
-        if v:IsA("BasePart") and (v.Name:find("Egg") or v.Parent.Name:find("Egg")) then
-            local d = (Player.Character.HumanoidRootPart.Position - v.Position).Magnitude
-            if d < dist then
-                dist = d
-                target = v
+    for _, obj in ipairs(game.Workspace:GetDescendants()) do
+        -- Search for ProximityPrompts within objects containing "Egg"
+        if obj:IsA("ProximityPrompt") then
+            local parentName = obj.Parent.Name:lower()
+            local promptText = obj.ObjectText:lower()
+            
+            if parentName:find("egg") or promptText:find("egg") then
+                -- Only target if it's not currently "stolen" (invisible)
+                if obj.Parent:IsA("BasePart") and obj.Parent.Transparency < 1 and obj.Enabled then
+                    local dist = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - obj.Parent.Position).Magnitude
+                    if dist < lastDist then
+                        nearest = obj
+                        lastDist = dist
+                    end
+                end
             end
         end
     end
-    return target
+    return nearest
 end
 
--- Function to find your team's nest/base
-local function getBase()
-    -- Attempts to find base based on Team color or Name
-    local teamName = Player.Team and Player.Team.Name or "None"
-    local base = workspace:FindFirstChild(teamName .. "Base") or workspace:FindFirstChild("Nests"):FindFirstChild(teamName)
-    
-    -- Fallback: If specific base not found, looks for generic delivery point
-    if not base then
-        base = workspace:FindFirstChild("DeliveryPart") or workspace:FindFirstChild("Deposit")
-    end
-    return base
-end
+-- Main Automation Tab
+local FarmTab = Window:MakeTab({
+	Name = "Auto-Farm",
+	Icon = "rbxassetid://4483362458",
+	PremiumOnly = false
+})
 
--- Main Farm Logic
-spawn(function()
-    while true do
-        task.wait(0.1)
-        if _G.AutoFarm then
-            pcall(function()
-                local egg = getNearestEgg()
-                local base = getBase()
-                local root = Player.Character:WaitForChild("HumanoidRootPart")
-
-                if egg and egg.Parent then
-                    -- Teleport to Egg
-                    root.CFrame = egg.CFrame * CFrame.new(0, 2, 0)
-                    task.wait(0.3)
+FarmTab:AddToggle({
+	Name = "Enable Auto-Steal",
+	Default = false,
+	Callback = function(Value)
+		getgenv().AutoFarm = Value
+        if Value then
+            task.spawn(function()
+                while getgenv().AutoFarm do
+                    local eggPrompt = findTargetEgg()
+                    local char = game.Players.LocalPlayer.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
                     
-                    -- Trigger interaction if game uses ProximityPrompts
-                    local prompt = egg:FindFirstChildOfClass("ProximityPrompt") or egg.Parent:FindFirstChildOfClass("ProximityPrompt")
-                    if prompt then
-                        fireproximityprompt(prompt)
-                    end
-                    
-                    task.wait(0.2)
-                    
-                    -- Teleport to Base to deliver
-                    if base then
-                        root.CFrame = base.CFrame * CFrame.new(0, 5, 0)
-                        task.wait(0.5)
+                    if eggPrompt and root then
+                        -- Precision Teleportation
+                        root.CFrame = eggPrompt.Parent.CFrame * CFrame.new(0, getgenv().TPDistance, 0)
+                        task.wait(0.1)
+                        
+                        -- Delta-Specific Interaction Bypass
+                        if fireproximityprompt then
+                            fireproximityprompt(eggPrompt)
+                        else
+                            eggPrompt:InputHoldBegin()
+                            task.wait(eggPrompt.HoldDuration)
+                            eggPrompt:InputHoldEnd()
+                        end
+                        task.wait(getgenv().FarmSpeed)
+                    else
+                        -- Idle wait for respawns
+                        task.wait(1)
                     end
                 end
             end)
         end
-    end
-end)
-
--- UI Tabs
-local MainTab = Window:CreateTab("Main", 4483362458) -- Tab icon
-
-local Toggle = MainTab:CreateToggle({
-   Name = "Enable Auto Farm",
-   CurrentValue = false,
-   Flag = "AutoFarmToggle",
-   Callback = function(Value)
-      _G.AutoFarm = Value
-      if Value then
-          Rayfield:Notify({
-             Title = "Auto Farm Active",
-             Content = "The bot is now collecting eggs.",
-             Duration = 3,
-             Image = 4483362458,
-          })
-      end
-   end,
+	end    
 })
 
-MainTab:CreateButton({
-   Name = "Anti-AFK",
-   Callback = function()
-       local vu = game:GetService("VirtualUser")
-       game:GetService("Players").LocalPlayer.Idled:connect(function()
-           vu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
-           wait(1)
-           vu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
-       end)
-       Rayfield:Notify({Title = "Success", Content = "Anti-AFK Enabled", Duration = 2})
-   end,
+FarmTab:AddSlider({
+	Name = "Farm Delay",
+	Min = 0.1,
+	Max = 3,
+	Default = 0.5,
+	Color = Color3.fromRGB(255,165,0),
+	Increment = 0.1,
+	ValueName = "sec",
+	Callback = function(Value)
+		getgenv().FarmSpeed = Value
+	end    
 })
 
-Rayfield:LoadConfiguration()
+-- Movement Tab
+local MiscTab = Window:MakeTab({
+	Name = "Movement",
+	Icon = "rbxassetid://4483362458",
+	PremiumOnly = false
+})
+
+MiscTab:AddSlider({
+	Name = "WalkSpeed",
+	Min = 16,
+	Max = 200,
+	Default = 16,
+	Increment = 1,
+	Callback = function(v) game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v end
+})
+
+MiscTab:AddButton({
+	Name = "Anti-AFK",
+	Callback = function()
+        local vu = game:GetService("VirtualUser")
+        game:GetService("Players").LocalPlayer.Idled:Connect(function()
+            vu:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+            task.wait(1)
+            vu:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        end)
+        OrionLib:MakeNotification({Name = "System", Content = "Anti-AFK Enabled", Time = 3})
+	end
+})
+
+OrionLib:Init()
